@@ -1,4 +1,4 @@
-# SISOP-4-2026-IT-027
+# SISOP-5-2026-IT-027
 
 ## Member:
 | Nama | NRP | Kelas |
@@ -76,9 +76,9 @@ Fungsi `_getChar` dibuat seperti berikut:
 
 ```asm
 _getChar:
-    mov ah, 0x00
-    int 0x16
-    xor ah, ah
+    mov ah, 0x00        ; BIOS interrupt untuk membaca keyboard
+    int 0x16            ; Panggil interupsi BIOS, hasil karakter masuk ke AL
+    mov ah, 0x00        ; Bersihkan AH agar nilai kembalian murni AL
     ret
 ```
 
@@ -109,7 +109,7 @@ int getChar();
 maka nilai return dibaca dari register `AX`. Agar nilai return bersih dan hanya berisi ASCII, register `AH` dikosongkan dengan:
 
 ```asm
-xor ah, ah
+mov ah, 0x00
 ```
 
 Jika `AH` tidak dikosongkan, hasil input dapat tercampur dengan scan code, sehingga pembacaan karakter di `readString()` bisa tidak stabil.
@@ -124,9 +124,9 @@ c = getChar();
 
 Setiap kali user mengetik satu karakter, `getChar()` mengambil karakter itu dari keyboard, lalu `readString()` menyimpannya ke array command.
 
-## 2 -  Membuat Instruksi `check`
+## 2 - Membuat Instruksi `check`
 
-Soal lalu meminta untuk membuat command `check` yanmg digunakan sebagai fitur uji awal untuk memastikan shell berjalan. Jika user mengetik:
+Soal lalu meminta untuk membuat command `check` yang digunakan sebagai fitur uji awal untuk memastikan shell berjalan. Jika user mengetik:
 
 ```text
 > check
@@ -151,13 +151,24 @@ readString();
 strcmp();
 ```
 
-Fungsi `clearScreen()` membersihkan layar dengan menulis karakter spasi ke seluruh area VGA text memory. Fungsi ini menulis ke segment `0xB800`, yaitu alamat standar video memory untuk mode teks warna.
+Fungsi `clearScreen()` membersihkan layar dengan menulis karakter spasi ke seluruh area VGA text memory. Fungsi ini menulis ke segment `0xB800`, yaitu alamat standar video memory untuk mode teks warna. Perlu diperhatikan, atribut warna di `clearScreen()` di-hardcode ke `0x07` (putih di atas hitam) agar tampilan selalu bersih secara konsisten:
 
-Fungsi `printChar()` menulis satu karakter ke posisi cursor saat ini. Setiap karakter di VGA text mode memakai 2 byte: byte pertama untuk karakter, byte kedua untuk atribut warna.
+```c
+void clearScreen() {
+    int i;
+    cursor = 0;
+    for (i = 0; i < 80 * 25; i++) {
+        putInMemory(0xB800, i * 2, ' ');
+        putInMemory(0xB800, i * 2 + 1, 0x07);
+    }
+}
+```
+
+Fungsi `printChar()` menulis satu karakter ke posisi cursor saat ini. Setiap karakter di VGA text mode memakai 2 byte: byte pertama untuk karakter, byte kedua untuk atribut warna dari variabel global `color`.
 
 Fungsi `printString()` memanggil `printChar()` berulang kali sampai menemukan karakter null `0`.
 
-Fungsi `readString()` membaca input keyboard satu per satu menggunakan `getChar()`. Jika tombol Enter ditekan, string diakhiri dengan `0`. Jika Backspace ditekan, karakter sebelumnya dihapus dari layar dan index input dikurangi.
+Fungsi `readString()` membaca input keyboard satu per satu menggunakan `getChar()`. Jika tombol Enter ditekan (kode ASCII `13`), string diakhiri dengan `0`. Jika Backspace ditekan (kode ASCII `8`), karakter sebelumnya dihapus dari layar dan index input dikurangi. Hanya karakter printable (ASCII `32`–`126`) yang diterima, dengan panjang maksimal 63 karakter.
 
 Fungsi `strcmp()` membandingkan dua string secara manual. Fungsi ini mengembalikan `1` jika dua string sama, dan `0` jika berbeda.
 
@@ -197,58 +208,41 @@ Soal lalu meminta untuk membuat command `add` yang digunakan untuk menjumlahkan 
 8
 ```
 
-Karena tidak memakai `stdlib.h`, sistem tidak bisa memakai `atoi()`. Oleh karena itu, parsing angka harus dibuat sendiri.
-
 ### Fungsi yang Dibutuhkan
 
-Fitur `add` membutuhkan tiga fungsi tambahan:
+Fitur `add` membutuhkan dua fungsi tambahan:
 
 ```c
-startsWith();
-readNumberAt();
-nextNumberIndex();
+atoi();
+intToString();
 ```
 
-Fungsi `startsWith()` memeriksa apakah command diawali prefix tertentu. Untuk command `add 5 3`, prefix yang dicek adalah `"add "`.
+Fungsi `atoi()` membaca angka dari sebuah pointer string. Fungsi ini membaca digit satu per satu selama karakter masih berada di rentang `'0'`–`'9'`, lalu mengembalikan nilai integer-nya.
 
-Fungsi `readNumberAt()` membaca angka mulai dari index tertentu dalam string. Misalnya pada string:
-
-```text
-add 5 3
-```
-
-index karakter adalah:
-
-```text
-a d d   5   3
-0 1 2 3 4 5 6
-```
-
-Angka pertama dimulai dari index `4`.
-
-Fungsi `nextNumberIndex()` mencari posisi awal angka berikutnya. Setelah membaca angka pertama, fungsi ini melewati digit dan spasi agar index berpindah ke angka kedua.
+Fungsi `intToString()` mengubah integer menjadi string karakter. Fungsi ini bekerja dengan mengekstrak digit dari belakang menggunakan pengurangan berulang (karena tidak memakai operator modulo `%`), menyimpannya ke buffer sementara, lalu membalik urutannya.
 
 ### Implementasi Handler
 
 ```c
-} else if (startsWith(cmd, "add ")) {
-    index = 4;
+else if (startsWith(cmd, "add ")) {
+    int i = 4, a, b;
+    char hasil[10];
 
-    a = readNumberAt(cmd, index);
-    index = nextNumberIndex(cmd, index);
-    b = readNumberAt(cmd, index);
+    while (cmd[i] == ' ') i++;
+    a = atoi(cmd + i);
 
-    result = a + b;
+    while (cmd[i] >= '0' && cmd[i] <= '9') i++;
+    while (cmd[i] == ' ') i++;
+    b = atoi(cmd + i);
 
-    printNumber(result);
+    intToString(a + b, hasil);
+    printString(hasil);
 }
 ```
 
 ### Penjelasan Teknis
 
-`index = 4` digunakan karena command `"add "` memiliki panjang 4 karakter. Setelah itu, `readNumberAt()` membaca bilangan pertama. Kemudian `nextNumberIndex()` mencari posisi angka kedua. Hasil penjumlahan disimpan dalam `result`, lalu dicetak dengan `printNumber()`.
-
-Fungsi `printNumber()` juga dibuat manual. Fungsi ini tidak memakai pembagian `/` atau modulo `%`, karena template soal memberi batasan untuk menghindari operasi tersebut. Sebagai gantinya, fungsi mencetak angka dengan mengurangi nilai berdasarkan divisor `10000`, `1000`, `100`, `10`, dan `1`.
+`i = 4` digunakan karena command `"add "` memiliki panjang 4 karakter. Setelah itu, spasi ekstra dilewati, lalu `atoi(cmd + i)` membaca bilangan pertama dengan pointer aritmetika. Kemudian index digeser melewati digit angka pertama dan spasi berikutnya, lalu `atoi(cmd + i)` membaca bilangan kedua. Hasil penjumlahan dikonversi ke string dengan `intToString()` dan dicetak dengan `printString()`.
 
 ## 4 - Membuat Fitur `sub`
 
@@ -264,16 +258,24 @@ Fitur ini memakai sistem parsing angka yang sama dengan `add`, tetapi operasi ak
 ### Implementasi Handler
 
 ```c
-} else if (startsWith(cmd, "sub ")) {
-    index = 4;
+else if (startsWith(cmd, "sub ")) {
+    int i = 4, a, b, res;
+    char hasil[10];
 
-    a = readNumberAt(cmd, index);
-    index = nextNumberIndex(cmd, index);
-    b = readNumberAt(cmd, index);
+    while (cmd[i] == ' ') i++;
+    a = atoi(cmd + i);
 
-    result = a - b;
+    while (cmd[i] >= '0' && cmd[i] <= '9') i++;
+    while (cmd[i] == ' ') i++;
+    b = atoi(cmd + i);
 
-    printNumber(result);
+    res = a - b;
+    if (res < 0) {
+        printChar('-');
+        res = -res;
+    }
+    intToString(res, hasil);
+    printString(hasil);
 }
 ```
 
@@ -282,23 +284,17 @@ Fitur ini memakai sistem parsing angka yang sama dengan `add`, tetapi operasi ak
 Command `sub 10 2` diproses sebagai string. Prefix `"sub "` diperiksa dengan `startsWith()`. Angka pertama dibaca sebagai `10`, angka kedua dibaca sebagai `2`, lalu hasilnya dihitung dengan:
 
 ```c
-result = a - b;
+res = a - b;
 ```
 
-Fungsi `printNumber()` juga mendukung angka negatif. Jika hasil pengurangan negatif, misalnya:
+Fungsi ini juga mendukung angka negatif. Jika hasil pengurangan negatif, misalnya:
 
 ```text
 > sub 3 7
 -4
 ```
 
-maka fungsi mencetak karakter `'-'` terlebih dahulu, lalu mengubah nilai negatif menjadi positif dengan:
-
-```c
-number = 0 - number;
-```
-
-Setelah itu digit angka dicetak seperti biasa.
+maka karakter `'-'` dicetak terlebih dahulu dengan `printChar('-')`, lalu nilai dibalik menjadi positif dengan `res = -res`, setelah itu digit angka dicetak seperti biasa menggunakan `intToString()`.
 
 ## 5 - Membuat Fitur `fac`
 
@@ -320,62 +316,50 @@ know your limit little bro.
 Dalam sistem 16-bit signed integer, nilai maksimum yang aman adalah sekitar `32767`. Nilai faktorial naik sangat cepat:
 
 ```text
-7! = 5040
 8! = 40320
+9! = 362880
 ```
 
-Karena `8!` sudah melewati `32767`, maka batas aman yang dipakai adalah `7`.
-
-Dengan demikian:
+Karena `9!` sudah melewati `32767`, maka batas yang diimplementasikan adalah `n > 8`:
 
 ```text
-fac 6   -> 720
-fac 7   -> 5040
-fac 8   -> know your limit little bro.
+fac 8   -> 40320
+fac 9   -> know your limit little bro.
 fac 120 -> know your limit little bro.
 ```
 
 ### Implementasi Fungsi Faktorial
 
 ```c
-int factorial(int number) {
+int factorial(int n) {
+    int hasil = 1;
     int i;
-    int result;
-
-    i = 1;
-    result = 1;
-
-    while (i <= number) {
-        result = result * i;
-        i++;
+    for (i = 1; i <= n; i++) {
+        hasil = hasil * i;
     }
-
-    return result;
+    return hasil;
 }
 ```
 
 ### Implementasi Handler
 
 ```c
-} else if (startsWith(cmd, "fac ")) {
-    index = 4;
+else if (startsWith(cmd, "fac ")) {
+    int n = atoi(cmd + 4);
+    char hasil[10];
 
-    a = readNumberAt(cmd, index);
-
-    if (a > 7) {
+    if (n > 8) {
         printString("know your limit little bro.");
     } else {
-        result = factorial(a);
-        printNumber(result);
+        intToString(factorial(n), hasil);
+        printString(hasil);
     }
 }
 ```
 
 ### Penjelasan Teknis
 
-Angka setelah command `fac` dibaca mulai dari index `4`, karena `"fac "` memiliki panjang 4 karakter. Jika angka lebih besar dari 7, sistem tidak menghitung faktorialnya. Ini dilakukan untuk mencegah overflow integer.
-
-Jika angka masih aman, fungsi `factorial()` menghitung hasil dengan loop dari `1` sampai `number`. Hasil akhir dicetak menggunakan `printNumber()`.
+Angka setelah command `fac` dibaca dengan `atoi(cmd + 4)`, karena `"fac "` memiliki panjang 4 karakter. Jika angka lebih besar dari 8, sistem tidak menghitung faktorialnya untuk mencegah overflow integer. Jika masih aman, fungsi `factorial()` menghitung hasil dengan loop dari `1` sampai `n`. Hasil akhir dikonversi ke string dengan `intToString()` dan dicetak menggunakan `printString()`.
 
 ## 6 - Membuat Fitur Season
 
@@ -397,52 +381,51 @@ Mapping warna yang digunakan:
 
 ```text
 winter  -> 0x09 -> biru terang
-spring  -> 0x0A -> hijau terang
-summer  -> 0x0E -> kuning
-fall    -> 0x06 -> coklat/oranye
-radiant -> 0x0D -> pink/ungu
+spring  -> 0x0D -> pink/magenta
+summer  -> 0x0A -> hijau terang
+fall    -> 0x0E -> kuning
+radiant -> 0x0C -> merah terang
 ```
 
 ### Implementasi Handler
 
 ```c
-} else if (startsWith(cmd, "season ")) {
-    index = 7;
-
-    if (strcmpAt(cmd, index, "winter")) {
+else if (startsWith(cmd, "season ")) {
+    char* name = cmd + 7;
+    if (strcmp(name, "winter")) {
         color = 0x09;
-        printString("winter season applied");
-    } else if (strcmpAt(cmd, index, "spring")) {
-        color = 0x0A;
-        printString("spring season applied");
-    } else if (strcmpAt(cmd, index, "summer")) {
-        color = 0x0E;
-        printString("summer season applied");
-    } else if (strcmpAt(cmd, index, "fall")) {
-        color = 0x06;
-        printString("fall season applied");
-    } else if (strcmpAt(cmd, index, "radiant")) {
+        printString("winter mode");
+    } else if (strcmp(name, "spring")) {
         color = 0x0D;
-        printString("radiant season applied");
+        printString("spring mode");
+    } else if (strcmp(name, "summer")) {
+        color = 0x0A;
+        printString("summer mode");
+    } else if (strcmp(name, "fall")) {
+        color = 0x0E;
+        printString("fall mode");
+    } else if (strcmp(name, "radiant")) {
+        color = 0x0C;
+        printString("radiant mode");
     } else {
-        printString("unknown season");
+        printString("season not found");
     }
 }
 ```
 
 ### Penjelasan Teknis
 
-Command `"season "` memiliki panjang 7 karakter, sehingga nama season mulai dibaca dari index `7`.
+Command `"season "` memiliki panjang 7 karakter, sehingga nama season diambil langsung dengan pointer aritmetika `char* name = cmd + 7`.
 
-Fungsi `strcmpAt()` membandingkan substring pada posisi tertentu dengan kata target. Contohnya, pada command:
+Fungsi `strcmp()` membandingkan pointer `name` dengan string target. Contohnya, pada command:
 
 ```text
 season winter
 ```
 
-fungsi ini membandingkan isi command mulai index `7` dengan string `"winter"`.
+`name` menunjuk ke substring `"winter"` di dalam array `cmd`, lalu dibandingkan dengan literal `"winter"`.
 
-Setelah warna diubah, semua output berikutnya akan memakai warna baru karena fungsi `printChar()` selalu menulis atribut warna dari variabel global `color`.
+Setelah warna diubah, semua output berikutnya akan memakai warna baru karena fungsi `printChar()` selalu menulis atribut warna dari variabel global `color`. Jika nama season tidak dikenali, sistem mencetak `"season not found"`.
 
 ## 7 - Membuat Fitur `triangle`
 
@@ -459,51 +442,26 @@ xxxxx
 
 Fitur ini membutuhkan parsing angka seperti `add`, `sub`, dan `fac`.
 
-### Implementasi Fungsi
-
-```c
-void printTriangle(int size) {
-    int row;
-    int col;
-
-    row = 1;
-
-    while (row <= size) {
-        col = 1;
-
-        while (col <= row) {
-            printChar('x');
-            col++;
-        }
-
-        newline();
-        row++;
-    }
-}
-```
-
 ### Implementasi Handler
 
 ```c
-} else if (startsWith(cmd, "triangle ")) {
-    index = 9;
-
-    a = readNumberAt(cmd, index);
-
-    if (a <= 0) {
-        printString("triangle size must be positive");
-    } else {
-        printTriangle(a);
-        needNewline = 0;
+else if (startsWith(cmd, "triangle ")) {
+    int n = atoi(cmd + 9);
+    int i, j;
+    for (i = 1; i <= n; i++) {
+        for (j = 0; j < i; j++) {
+            printChar('x');
+        }
+        if (i < n) newline();
     }
 }
 ```
 
 ### Penjelasan Teknis
 
-Command `"triangle "` memiliki panjang 9 karakter, sehingga angka ukuran segitiga mulai dibaca dari index `9`.
+Command `"triangle "` memiliki panjang 9 karakter, sehingga angka ukuran segitiga dibaca dengan `atoi(cmd + 9)`.
 
-Fungsi `printTriangle()` menggunakan dua loop. Loop luar menentukan baris, sedangkan loop dalam mencetak jumlah `x` sesuai nomor baris.
+Implementasi menggunakan dua loop. Loop luar menentukan baris dari `1` sampai `n`, sedangkan loop dalam mencetak jumlah `x` sesuai nomor baris. Fungsi `newline()` hanya dipanggil di antara baris (kondisi `i < n`), sehingga tidak ada newline ekstra setelah baris terakhir dan tampilan prompt tidak terlalu renggang.
 
 Untuk `triangle 5`, prosesnya adalah:
 
@@ -515,35 +473,31 @@ baris 4 -> 4 x
 baris 5 -> 5 x
 ```
 
-Variabel `needNewline` digunakan agar setelah `printTriangle()` tidak ditambahkan newline ekstra yang membuat tampilan prompt terlalu renggang.
-
 ## 8 - Membuat Fitur `clear` dan `help`
 
-Terakhir, soal meminta untuk membuat command `clear` dan `help`.  Command `clear` digunakan untuk membersihkan layar dari histori command. Command ini memanggil `clearScreen()` dan mengembalikan cursor ke posisi awal.
+Terakhir, soal meminta untuk membuat command `clear` dan `help`. Command `clear` digunakan untuk membersihkan layar dari histori command. Command ini memanggil `clearScreen()` dan mengembalikan cursor ke posisi awal, lalu langsung melanjutkan loop dengan `continue` agar tidak mencetak newline tambahan setelah layar dibersihkan.
 
-Command `help` digunakan untuk menampilkan daftar command yang tersedia. Output yang diminta soal adalah:
+Command `help` digunakan untuk menampilkan daftar command yang tersedia. Output yang ditampilkan adalah:
 
 ```text
-check add sub fac season triangle clear about
+check add sub fac season triangle clear about help
 ```
-
-Walaupun command `help` tidak tercantum dalam output daftar tersebut, fitur `help` tetap harus tersedia karena diminta oleh soal.
 
 ### Implementasi `clear`
 
 ```c
-} else if (strcmp(cmd, "clear")) {
+else if (strcmp(cmd, "clear")) {
     clearScreen();
-    needNewline = 0;
+    continue;
 }
 ```
 
-Fungsi `clearScreen()` mengulang seluruh 80 × 25 posisi layar. Setiap posisi diisi dengan karakter spasi dan atribut warna saat ini.
+Fungsi `clearScreen()` mengulang seluruh 80 × 25 posisi layar. Setiap posisi diisi dengan karakter spasi dan atribut warna `0x07`:
 
 ```c
 for (i = 0; i < 80 * 25; i++) {
     putInMemory(0xB800, i * 2, ' ');
-    putInMemory(0xB800, i * 2 + 1, color);
+    putInMemory(0xB800, i * 2 + 1, 0x07);
 }
 ```
 
@@ -553,40 +507,36 @@ Setelah itu cursor dikembalikan ke awal:
 cursor = 0;
 ```
 
-Karena layar sudah dibersihkan, `needNewline` dibuat `0` agar sistem tidak menambahkan baris kosong setelah `clear`.
+Penggunaan `continue` setelah `clearScreen()` membuat loop langsung kembali ke awal tanpa memanggil `newline()` di akhir iterasi, sehingga prompt `> ` langsung muncul di pojok kiri atas layar yang sudah bersih.
 
 ### Implementasi `help`
 
 ```c
-void printHelp() {
-    printString("check add sub fac season triangle clear about");
+else if (strcmp(cmd, "help")) {
+    printString("check add sub fac season triangle clear about help");
 }
 ```
 
-Handler-nya:
-
-```c
-} else if (strcmp(cmd, "help")) {
-    printHelp();
-}
-```
+Daftar command yang ditampilkan mencakup `help` itu sendiri, sehingga pengguna tahu bahwa command tersebut tersedia.
 
 ### Command `about`
 
-Di dalam daftar help, soal juga mencantumkan `about`. Karena itu, command `about` dibuat agar ketika user mengetiknya, sistem menampilkan informasi singkat.
+Di dalam daftar help, soal juga mencantumkan `about`. Karena itu, command `about` dibuat agar ketika user mengetiknya, sistem menampilkan informasi singkat tentang OS Shell ini:
 
 ```c
-void printAbout() {
-    printString("Final Shift OS");
-    newline();
-    printString("Hadiah terakhir sang asisten.");
+else if (strcmp(cmd, "about")) {
+    printString("OS Shell - Final Challenge Modul 5");
 }
 ```
 
-Handler-nya:
+### Command Tidak Dikenal
+
+Selain semua command di atas, sistem juga menangani input yang tidak dikenali dengan menampilkan pesan:
 
 ```c
-} else if (strcmp(cmd, "about")) {
-    printAbout();
+else {
+    printString("unknown command");
 }
 ```
+
+Hal ini memastikan shell selalu memberikan feedback kepada pengguna meskipun command yang dimasukkan tidak valid.
