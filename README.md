@@ -1,4 +1,12 @@
-# Soal 2 - Season
+# SISOP-4-2026-IT-027
+
+## Member:
+| Nama | NRP | Kelas |
+| :---: | :---: | :---: |
+| Iqbal Rizki Muhammad Fadhli | 5027251027 | Sistem Operasi B | 
+
+## Reporting:
+### Soal 2 - Season
 
 # Gambaran Umum Alur Program
 
@@ -55,6 +63,8 @@ Peran tiap file adalah sebagai berikut.
 `README.md` digunakan untuk menjelaskan cara build, cara menjalankan, dan daftar fitur sistem.
 
 ---
+# Penjelasan Langkah-langkah Penyelesaian:
+
 ## 1 - Mengisi Fungsi `_getChar`
 
 Poin pertama soal meminta untuk mengisi fungsi `_getChar` pada `kernel.asm`. Fungsi ini digunakan agar sistem dapat membaca input keyboard dari pengguna.
